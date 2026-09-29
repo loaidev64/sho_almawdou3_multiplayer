@@ -19,6 +19,20 @@ mixin AppLocale {
   static const String manualHint = 'manualHint';
   static const String you = 'you';
   static const String peer = 'peer';
+  static const String settings = 'settings';
+  static const String nameEntryTitle = 'nameEntryTitle';
+  static const String nameEntrySubtitle = 'nameEntrySubtitle';
+  static const String playerName = 'playerName';
+  static const String nameHint = 'nameHint';
+  static const String continueLabel = 'continueLabel';
+  static const String save = 'save';
+  static const String nameRequired = 'nameRequired';
+  static const String nameTooLong = 'nameTooLong';
+  static const String nameSessionHint = 'nameSessionHint';
+  static const String themeSection = 'themeSection';
+  static const String themeLight = 'themeLight';
+  static const String themeDark = 'themeDark';
+  static const String themeSystem = 'themeSystem';
 
   static const Map<String, dynamic> ar = <String, dynamic>{
     homeTitle: 'شو الموضوع',
@@ -39,5 +53,19 @@ mixin AppLocale {
     manualHint: '192.168.1.5:8080',
     you: 'أنت',
     peer: 'الجهاز الآخر',
+    settings: 'الإعدادات',
+    nameEntryTitle: 'ما اسمك؟',
+    nameEntrySubtitle: 'سيظهر اسمك للجهاز الآخر',
+    playerName: 'الاسم',
+    nameHint: 'اكتب اسمك...',
+    continueLabel: 'متابعة',
+    save: 'حفظ',
+    nameRequired: 'لا يمكن أن يكون الاسم فارغًا',
+    nameTooLong: 'الاسم طويل جدًا — 24 حرفًا كحد أقصى',
+    nameSessionHint: 'سيُطبَّق الاسم الجديد عند الاتصال التالي',
+    themeSection: 'المظهر',
+    themeLight: 'فاتح',
+    themeDark: 'داكن',
+    themeSystem: 'تلقائي',
   };
 }
