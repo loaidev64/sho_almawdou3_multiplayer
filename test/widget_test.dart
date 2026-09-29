@@ -9,13 +9,17 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'player_name': 'أحمد',
+    });
     await configureLocalization();
   });
 
   testWidgets('renders the Arabic home screen with host and join actions',
       (WidgetTester tester) async {
     await tester.pumpWidget(const MyApp());
+    await tester.pump();
+    await tester.pump();
     await tester.pump();
 
     expect(find.byKey(const ValueKey('status_text')), findsOneWidget);

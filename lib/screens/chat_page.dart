@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -7,19 +8,33 @@ import 'package:local_websocket/local_websocket.dart';
 import 'package:reel_text/reel_text.dart';
 
 import '../l10n/app_locale.dart';
+import 'settings_page.dart';
 
 enum _Role { none, host, guest }
 
 class _Message {
-  _Message({required this.text, required this.fromSelf, required this.at});
+  _Message({
+    required this.text,
+    required this.fromSelf,
+    required this.at,
+    this.senderName,
+  });
 
   final String text;
   final bool fromSelf;
   final DateTime at;
+  final String? senderName;
 }
 
 class ChatPage extends StatefulWidget {
-  const ChatPage({super.key});
+  const ChatPage({
+    super.key,
+    required this.playerName,
+    required this.onNameChanged,
+  });
+
+  final String playerName;
+  final ValueChanged<String> onNameChanged;
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -47,6 +62,7 @@ class _ChatPageState extends State<ChatPage> {
   bool _scanFailed = false;
   int _clientsCount = 0;
   String _hostAddress = '';
+  String _sessionName = '';
 
   @override
   void dispose() {
@@ -76,6 +92,7 @@ class _ChatPageState extends State<ChatPage> {
     if (client != null) {
       await client.dispose();
     }
+    _sessionName = '';
   }
 
   String _now() => DateTime.now().toIso8601String();
@@ -128,14 +145,47 @@ class _ChatPageState extends State<ChatPage> {
     return null;
   }
 
-  void _addMessage(String text, {required bool fromSelf}) {
+  void _addMessage(
+    String text, {
+    required bool fromSelf,
+    String? senderName,
+  }) {
     if (!mounted) return;
     setState(() {
       _messages.insert(
         0,
-        _Message(text: text, fromSelf: fromSelf, at: DateTime.now()),
+        _Message(
+          text: text,
+          fromSelf: fromSelf,
+          at: DateTime.now(),
+          senderName: senderName,
+        ),
       );
     });
+  }
+
+  ({String text, String? name}) _decodeMessage(dynamic raw) {
+    if (raw is String) {
+      try {
+        final dynamic decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          final dynamic text = decoded['t'];
+          if (text is String) {
+            final dynamic name = decoded['n'];
+            return (
+              text: text,
+              name: name is String && name.trim().isNotEmpty
+                  ? name.trim()
+                  : null,
+            );
+          }
+        }
+      } on FormatException {
+        debugPrint('[WS-DEBUG] plain message "$raw" ${_now()}');
+      }
+      return (text: raw, name: null);
+    }
+    return (text: '$raw', name: null);
   }
 
   Future<void> _host() async {
@@ -148,15 +198,20 @@ class _ChatPageState extends State<ChatPage> {
     debugPrint('[WS-DEBUG] starting host on 0.0.0.0:$port ${_now()}');
     try {
       await _teardown();
+      _sessionName = widget.playerName;
       final Server server = Server(
         echo: false,
-        details: <String, dynamic>{'name': AppLocale.appName},
+        details: <String, dynamic>{
+          'name': AppLocale.appName,
+          'player': _sessionName,
+        },
       );
       await server.start(InternetAddress.anyIPv4.address, port: port);
       _server = server;
       _subscriptions.add(server.messageStream.listen((dynamic message) {
         debugPrint('[WS-DEBUG] host received "$message" ${_now()}');
-        _addMessage('$message', fromSelf: false);
+        final ({String text, String? name}) decoded = _decodeMessage(message);
+        _addMessage(decoded.text, fromSelf: false, senderName: decoded.name);
       }));
       _subscriptions.add(server.clientsStream.listen((Set<Client> clients) {
         debugPrint('[WS-DEBUG] host clients=${clients.length} ${_now()}');
@@ -260,8 +315,12 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _connect(String path) async {
     debugPrint('[WS-DEBUG] connecting to $path ${_now()}');
     try {
+      _sessionName = widget.playerName;
       final Client client = Client(
-        details: <String, String>{'device': 'flutter'},
+        details: <String, String>{
+          'device': 'flutter',
+          'name': _sessionName,
+        },
       );
       await client.connect(path);
       _scanTimer?.cancel();
@@ -271,7 +330,8 @@ class _ChatPageState extends State<ChatPage> {
       _client = client;
       _subscriptions.add(client.messageStream.listen((dynamic message) {
         debugPrint('[WS-DEBUG] guest received "$message" ${_now()}');
-        _addMessage('$message', fromSelf: false);
+        final ({String text, String? name}) decoded = _decodeMessage(message);
+        _addMessage(decoded.text, fromSelf: false, senderName: decoded.name);
       }));
       _subscriptions
           .add(client.connectionStream.listen((ClientConnectionStatus status) {
@@ -322,17 +382,21 @@ class _ChatPageState extends State<ChatPage> {
   void _send() {
     final String text = _messageInput.text.trim();
     if (text.isEmpty) return;
+    final String payload = jsonEncode(<String, String>{
+      'n': _sessionName,
+      't': text,
+    });
     final Server? server = _server;
     final Client? client = _client;
     if (_role == _Role.host && server != null) {
-      server.send(text);
+      server.send(payload);
       _addMessage(text, fromSelf: true);
       debugPrint('[WS-DEBUG] host sent "$text" ${_now()}');
       _messageInput.clear();
       return;
     }
     if (_role == _Role.guest && client != null) {
-      client.send(text);
+      client.send(payload);
       _addMessage(text, fromSelf: true);
       debugPrint('[WS-DEBUG] guest sent "$text" ${_now()}');
       _messageInput.clear();
@@ -450,6 +514,13 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  String _senderLabel(_Message message, BuildContext context) {
+    if (message.fromSelf) return AppLocale.you.getString(context);
+    final String? name = message.senderName;
+    if (name != null && name.isNotEmpty) return name;
+    return AppLocale.peer.getString(context);
+  }
+
   Widget _buildMessage(_Message message, BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final Color bubbleColor = message.fromSelf
@@ -478,7 +549,7 @@ class _ChatPageState extends State<ChatPage> {
                 : CrossAxisAlignment.start,
             children: <Widget>[
               Text(
-                '${message.fromSelf ? AppLocale.you.getString(context) : AppLocale.peer.getString(context)} · ${_formatTime(message.at)}',
+                '${_senderLabel(message, context)} · ${_formatTime(message.at)}',
                 style: theme.textTheme.labelSmall?.copyWith(
                   color: message.fromSelf
                       ? theme.colorScheme.onPrimary.withValues(alpha: 0.8)
@@ -500,12 +571,32 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  Future<void> _openSettings() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => SettingsPage(
+          initialName: widget.playerName,
+          onSaved: widget.onNameChanged,
+          sessionActive: _role != _Role.none,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(AppLocale.homeTitle.getString(context)),
+        actions: <Widget>[
+          IconButton(
+            key: const ValueKey('settings_button'),
+            tooltip: AppLocale.settings.getString(context),
+            onPressed: _openSettings,
+            icon: const Icon(Icons.settings),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Column(
